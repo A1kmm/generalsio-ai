@@ -1,0 +1,6 @@
+.ensime
+.idea
+target
+project/target
+*~
+
