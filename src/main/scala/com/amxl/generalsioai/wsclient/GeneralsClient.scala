@@ -17,7 +17,7 @@ import com.amxl.generalsioai.models.OfficialMessages.{MessageFromServer, Message
 import com.amxl.generalsioai.util.EffUtil._
 
 object GeneralsClient {
-  private val serverUri = "ws://ws.generals.io/socket.io/?EIO=3&transport=websocket"
+  private val serverUri = "ws://botws.generals.io/socket.io/?EIO=3&transport=websocket"
   private val sourceBufferSize = 5
   private val sinkBufferSize = 3
 

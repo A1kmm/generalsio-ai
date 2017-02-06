@@ -14,19 +14,18 @@ object OfficialMessageCodec {
     messageType <- cursorLookup(0).flatMap(_.as[String])
     result <- messageType match {
       case "queue_update" => for {
-        memberCount <- cursorLookup(1).flatMap(_.as[Int])
-        forceCount <- cursorLookup(2).flatMap(_.as[Int])
-        timeout <- cursorLookup(3).flatMap(_.as[Int])
-      } yield (QueueUpdate(memberCount = memberCount, forceCount = forceCount, timeout = timeout))
+        queueData <- cursorLookup(1)
+        memberCount <- queueData.get[Int]("numPlayers")
+        forceCount <- queueData.get[Int]("numForce")
+      } yield (QueueUpdate(memberCount = memberCount, forceCount = forceCount))
       case "game_update" => for {
         gameData <- cursorLookup(1)
         scores <- gameData.get[List[ScoreDetails]]("scores")
         turn <- gameData.get[Int]("turn")
-        attackIndex <- gameData.get[Int]("attackIndex")
         generals <- gameData.get[List[Int]]("generals")
         mapDiff <- gameData.get[List[Int]]("map_diff")
         citiesDiff <- gameData.get[List[Int]]("cities_diff")
-      } yield (GameUpdate(scores = scores, turn = turn, attackIndex = attackIndex, generals = generals,
+      } yield (GameUpdate(scores = scores, turn = turn, generals = generals,
                           mapDiff = mapDiff, citiesDiff = citiesDiff))
       case "pre_game_start" => Right(PreGameStart)
       case "game_won" => Right(GameWon)
@@ -55,12 +54,11 @@ object OfficialMessageCodec {
       Encoder.encodeString(""),
       Encoder.encodeString(userId)
     )
-    case Attack(source, dest, isHalf, attackIndex) => Json.arr(
+    case Attack(source, dest, isHalf) => Json.arr(
       Encoder.encodeString("attack"),
       Encoder.encodeInt(source),
       Encoder.encodeInt(dest),
-      Encoder.encodeBoolean(isHalf),
-      Encoder.encodeInt(attackIndex)
+      Encoder.encodeBoolean(isHalf)
     )
     case SetForceStart(userId, isForced) => Json.arr(
       Encoder.encodeString("set_force_start"),
@@ -72,6 +70,7 @@ object OfficialMessageCodec {
       Encoder.encodeString(username),
       Encoder.encodeString(name)
     )
+    case LeaveGame() => Json.arr(Encoder.encodeString("leave_game"))
   }
 
   def parseMessageFromServer(input: String): Either[String, MessageFromServer] =

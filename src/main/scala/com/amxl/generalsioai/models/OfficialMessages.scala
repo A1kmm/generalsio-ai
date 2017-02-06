@@ -7,14 +7,15 @@ object OfficialMessages {
   case class StarsAndRank(userId: String) extends MessageToServer
   case class JoinPrivate(gameId: String, userId: String) extends MessageToServer
   case class SetUsername(userId: String, name: String) extends MessageToServer
-  case class SetForceStart(userId: String, isForced: Boolean) extends MessageToServer
-  case class Attack(source: Int, dest: Int, isHalf: Boolean, attackIndex: Int) extends MessageToServer
+  case class SetForceStart(queueId: String, isForced: Boolean) extends MessageToServer
+  case class Attack(source: Int, dest: Int, isHalf: Boolean) extends MessageToServer
+  case class LeaveGame() extends MessageToServer
 
-  case class QueueUpdate(memberCount: Int, forceCount: Int, timeout: Int) extends MessageFromServer
+  case class QueueUpdate(memberCount: Int, forceCount: Int) extends MessageFromServer
   case object PreGameStart extends MessageFromServer
   case class GameStart(playerIndex: Int, replayId: String, chatRoom: String, usernames: List[String]) extends MessageFromServer
   case class ScoreDetails(total: Int, tiles: Int, i: Int, dead: Boolean)
-  case class GameUpdate(scores: List[ScoreDetails], turn: Int, attackIndex: Int, generals: List[Int],
+  case class GameUpdate(scores: List[ScoreDetails], turn: Int, generals: List[Int],
                         mapDiff: List[Int], citiesDiff: List[Int]) extends MessageFromServer
   case object GameWon extends MessageFromServer
   case object GameLost extends MessageFromServer

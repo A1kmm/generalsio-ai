@@ -11,7 +11,7 @@ object State {
 
   case class OccupiedCellState(team: Team, soldiers: Int, cellType: OccupiableCellType)
     extends KnownCellState with PossiblyUnknownCellState
-  case class EmptyCell(cellType: OccupiableCellType) extends KnownCellState with PossiblyUnknownCellState
+  case class EmptyCell(cellType: OccupiableCellType, strength: Int) extends KnownCellState with PossiblyUnknownCellState
   case object MountainCell extends KnownCellState with PossiblyUnknownCellState
   case object UnknownCell extends PossiblyUnknownCellState
 
@@ -23,7 +23,7 @@ object State {
   case class FullState(size: Coordinate, board: Map[Coordinate, KnownCellState])
   case class PlayerVisibleState(size: Coordinate, scores: Map[Team, Score],
                           board: Map[Coordinate, PossiblyUnknownCellState],
-                          playingAsTeam: Team, turnsUntilLandBonus: Int)
+                          playingAsTeam: Team, turn: Int, turnsUntilLandBonus: Int)
 
-  case class OfficialStateArrays(generals: List[Int], map: List[Int], cities: List[Int])
+  case class OfficialStateArrays(attackIndex: Int, generals: List[Int], map: List[Int], cities: List[Int])
 }

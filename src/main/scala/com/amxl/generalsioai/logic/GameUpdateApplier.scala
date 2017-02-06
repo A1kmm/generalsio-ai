@@ -20,7 +20,8 @@ object GameUpdateApplier {
     }
   }
 
-  val initialOfficialState = OfficialStateArrays(generals = List(), map = List(), cities = List())
+  def initialOfficialState(attackIndex: Int) = OfficialStateArrays(generals = List(), map = List(), cities = List(),
+    attackIndex = attackIndex)
 
   def updateOfficialState(update: GameUpdate, state: OfficialStateArrays): OfficialStateArrays =
     state.copy(generals = update.generals, map = applyDiff(update.mapDiff, state.map),
@@ -48,8 +49,8 @@ object GameUpdateApplier {
           boardAsList <- Traverse[List].traverse(coords.zip(armyCounts.zip(terrainTypes))) {
             case (coord, (_, terrainType)) if terrainType == -3 => Right(coord -> UnknownCell)
             case (coord, (_, terrainType)) if terrainType == -4 || terrainType == -2 => Right(coord -> MountainCell)
-            case (coord, (_, terrainType)) if terrainType == -1 => Right(coord -> EmptyCell(
-              cellType = cellTypeMap.getOrElse(coord, NormalCell)))
+            case (coord, (armyCount, terrainType)) if terrainType == -1 => Right(coord -> EmptyCell(
+              cellType = cellTypeMap.getOrElse(coord, NormalCell), strength = armyCount))
             case (coord, (armyCount, terrainType)) if scores.contains(Team(terrainType)) =>
               Right(coord -> OccupiedCellState(team = Team(terrainType), soldiers = armyCount,
                 cellType = cellTypeMap.getOrElse(coord, NormalCell)))
@@ -60,7 +61,8 @@ object GameUpdateApplier {
             size = Coordinate(width, height),
             scores = scores,
             board = Map(boardAsList :_*),
-            playingAsTeam = Team(lastUpdate.attackIndex),
+            playingAsTeam = Team(stateArrays.attackIndex),
+            turn = lastUpdate.turn,
             turnsUntilLandBonus = if (turnMod25 == 0) 25 else turnMod25
           )
 

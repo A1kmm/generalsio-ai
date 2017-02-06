@@ -8,8 +8,8 @@ class OfficialMessageCodecSpec extends Specification {
     "Decode server to client messages" in {
       case class TestCase(input: String, expectedResult: MessageFromServer)
       val cases = Seq(
-        TestCase(input = """["queue_update",1,0,90]""",
-                 expectedResult = QueueUpdate(memberCount = 1, forceCount = 0, timeout = 90)),
+        TestCase(input = """["queue_update",{"numPlayers":1,"numForce":0}]""",
+                 expectedResult = QueueUpdate(memberCount = 1, forceCount = 0)),
         TestCase(input = """["pre_game_start"]""",
                  expectedResult = PreGameStart),
         TestCase(input =
@@ -44,7 +44,6 @@ class OfficialMessageCodecSpec extends Specification {
             scores = List(ScoreDetails(total = 2, tiles = 1, i = 0, dead = false),
                            ScoreDetails(total = 3, tiles = 4, i = 1, dead = true)),
             turn = 2,
-            attackIndex = 0,
             generals = List(187, -1),
             mapDiff = List(189, 1, 2, 460),
             citiesDiff = List(0)
@@ -67,9 +66,10 @@ class OfficialMessageCodecSpec extends Specification {
         TestCase(input = StarsAndRank(userId = "helloworld"), expectedResult = """["stars_and_rank","helloworld"]"""),
         TestCase(input = JoinPrivate(gameId = "game", userId = "user"), expectedResult = """["join_private","game","","user"]"""),
         TestCase(input = SetUsername(userId = "user", name = "bob"), expectedResult = """["set_username","user","bob"]"""),
-        TestCase(input = SetForceStart(userId = "user", isForced = true), expectedResult = """["set_force_start","user",true]"""),
-        TestCase(input = Attack(source = 123, dest = 124, isHalf = false, attackIndex = 1), expectedResult =
-          """["attack",123,124,false,1]""")
+        TestCase(input = SetForceStart(queueId = "queue", isForced = true), expectedResult = """["set_force_start","queue",true]"""),
+        TestCase(input = Attack(source = 123, dest = 124, isHalf = false), expectedResult =
+          """["attack",123,124,false]"""),
+        TestCase(input = LeaveGame(), expectedResult = """["leave_game"]""")
       )
 
       cases map { testCase =>

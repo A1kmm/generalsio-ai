@@ -34,7 +34,7 @@ object CannedInterpreter {
   def cannedInterpreter[T[_]](responses: List[CannedResponse[T]]): CannedInterpreter[T] =
     CannedInterpreter(responses)
 
-  def respondWith[T[_], X](f : T[X] => X): CannedResponse[T] = new FunctionK[T, Identity] {
+  def respondWith[T[_], X](f : PartialFunction[T[X], X]): CannedResponse[T] = new FunctionK[T, Identity] {
     override def apply[A](fa: T[A]): Identity[A] = f(fa.asInstanceOf[T[X]]).asInstanceOf[A]
   }
 }
