@@ -7,6 +7,7 @@ import com.amxl.generalsioai.logic.GameBot._
 import com.amxl.generalsioai.logic.MultiObjectiveMoveRanker._
 import com.amxl.generalsioai.models.ClientActions.ClientAction
 import com.amxl.generalsioai.models.LogActions.LogAction
+import com.amxl.generalsioai.util.EffUtil.FailedWithMessageException
 import org.atnos.eff.ReaderInterpretation.runReader
 import org.atnos.eff._
 
@@ -23,14 +24,22 @@ object Main {
       val actorSystem: ActorSystem = ActorSystem()
       val actorMaterializer: Materializer = ActorMaterializer()(actorSystem)
 
-      val asyncEff: Eff[Fx.fx1[Async], Unit] =
-        runLogs(runReader(actorMaterializer)(
-          runReader(actorSystem)(
-            runGeneralsClient(
-              runBotInClient[FullStack](args(0), pickBestMove)))))
+      var done : Boolean = false
+      while (!done) {
+        try {
+          val asyncEff: Eff[Fx.fx1[Async], Unit] =
+            runLogs(runReader(actorMaterializer)(
+              runReader(actorSystem)(
+                runGeneralsClient(
+                  runBotInClient[FullStack](args(0), pickBestMove)))))
 
-      Await.result(AsyncFutureInterpreter.create(actorSystem.dispatcher: ExecutionContext).runAsync(asyncEff),
-        Duration.Inf)
+          Await.result(AsyncFutureInterpreter.create(actorSystem.dispatcher: ExecutionContext).runAsync(asyncEff),
+            Duration.Inf)
+          done = true;
+        } catch {
+          case FailedWithMessageException(msg) => println("Restarting after failure: " + msg)
+        }
+      }
 
       actorSystem.terminate()
     }

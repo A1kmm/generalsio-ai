@@ -15,6 +15,8 @@ import scala.language.higherKinds
 object EffUtil {
   type Identity[A] = A
 
+  case class FailedWithMessageException(msg: String) extends Exception(msg)
+
   // This could be improved, but it would require writing a different async interpreter and effects.
   def liftFuture[A, R : MemberIn[Async, ?]](future: Future[A]): Eff[R, A] =
     asyncDelay(Await.result(future, Duration.Inf))
@@ -23,7 +25,7 @@ object EffUtil {
     if (cond) onTrue else Applicative[F].pure(())
 
   def failWithMessage[R : MemberIn[Async, ?], A](msg: String): Eff[R, A] =
-    asyncFail[R, A](new RuntimeException(msg))
+    asyncFail[R, A](new FailedWithMessageException(msg))
 
   def failWithMessageIf[R : MemberIn[Async, ?]](cond: Boolean, msg: String): Eff[R, Unit] =
     when[Eff[R, ?]](cond)(failWithMessage[R, Unit](msg))

@@ -17,6 +17,7 @@ lazy val root = (project in file(".")).
       "io.circe" %% "circe-optics" % circeVersion,
       "com.typesafe.akka" %% "akka-http-core" % akkaVersion,
       "org.atnos" %% "eff" % "2.2.0",
+      "org.spire-math" %% "spire" % "0.13.0",
 
       "org.specs2" %% "specs2-core" % "3.8.6" % "test"
     ),

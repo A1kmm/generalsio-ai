@@ -44,12 +44,10 @@ object GameBot {
 
   private def gameMainLoop[R : HasClientAction : HasLog : MemberIn[State[OfficialStateArrays, ?], ?]](
     ai: PlayerVisibleState => ProposedAction): Eff[R, Unit] = {
-    println("In gameMainLoop, about to readMessage...")
     readMessage().flatMap {
       case GameLost => writeLog("We lost :'(")
       case GameWon => writeLog("We won!!!!!")
-      case update: GameUpdate => {
-        println("Processing update " + update)
+      case update: GameUpdate =>
         for {
           oldState <- get[R, OfficialStateArrays]
           newState = GameUpdateApplier.updateOfficialState(update, oldState)
@@ -64,7 +62,6 @@ object GameBot {
             case Left(msg) => writeLog(msg)
           }
         } yield ()
-      }
 
       case msg => for {
         _ <- writeLog("Other message received during game: " + msg)

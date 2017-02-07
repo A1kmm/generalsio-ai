@@ -7,8 +7,8 @@ import FloydDistanceCalculator.DistanceMap
 object MultiObjectiveMoveRanker {
   private val maximumNotProtectiveConcurrentStrategies = 2
 
-  private def allPossibleStrategies(state: PlayerVisibleState): List[ProposedStrategy] =
-    state.board.toList.collect {
+  private def allPossibleStrategies(state: PlayerVisibleState): Seq[ProposedStrategy] =
+    state.board.toSeq.collect {
       case (p, OccupiedCellState(team, _, GeneralCell)) if team != state.playingAsTeam =>
         AttackEnemyGeneral(p)
       case (p, OccupiedCellState(team, _, CityCell)) if team != state.playingAsTeam =>
@@ -25,11 +25,9 @@ object MultiObjectiveMoveRanker {
       case _ => 0
     }
 
-    distances.toList.collect {
-      case ((c1, c2), dist) if c2 == locus => dist -> c1
-    }.groupBy(_._1).map {
+    distances(locus).toSeq.groupBy(_._2).map {
       case (None, _) => 0
-      case (Some(dist), cellsAtDist) => decayFunction(dist) * cellsAtDist.map(c => strengthOfCell(c._2)).sum
+      case (Some(dist), cellsAtDist) => decayFunction(dist) * cellsAtDist.map(c => strengthOfCell(c._1)).sum
     }.sum
   }
 
@@ -41,7 +39,7 @@ object MultiObjectiveMoveRanker {
 
 
   private def pickStrategies(state: PlayerVisibleState, distances: DistanceMap):
-    List[(Double, ProposedStrategy)] =
+    Seq[(Double, ProposedStrategy)] =
       allPossibleStrategies(state).map(strategy => (scoreStrategy(strategy, state, distances), strategy))
         .sortBy(_._1)
         .take(maximumNotProtectiveConcurrentStrategies)
@@ -56,16 +54,17 @@ object MultiObjectiveMoveRanker {
     state.board.get(coordinate) match {
       case None => false
       case Some(MountainCell) => false
+      case Some(UnknownCell) => false
       case _ => true
     }
 
-  private def allPossibleMoves(state: PlayerVisibleState, playingTeam: Team): List[ProposedAction] = {
-    val sourceCells = state.board.toList.collect {
+  private def allPossibleMoves(state: PlayerVisibleState, playingTeam: Team): Seq[ProposedAction] = {
+    val sourceCells = state.board.toSeq.collect {
       case (coord, State.OccupiedCellState(team, soldiers, cellType)) if team == playingTeam && soldiers > 1 =>
         coord -> (soldiers > 2)
     }
 
-    DoNothingAction :: sourceCells.flatMap { case (sourceCell, isHalfStrengthOption) =>
+    Seq(DoNothingAction) ++ sourceCells.flatMap { case (sourceCell, isHalfStrengthOption) =>
       neighbouringCells(sourceCell).filter(canOccupy(state, _)).flatMap { target =>
         ProposedAttackAction(sourceCell, target, halfStrength = false) ::
           (if (isHalfStrengthOption) List(ProposedAttackAction(sourceCell, target, halfStrength = true)) else List.empty)
@@ -114,13 +113,13 @@ object MultiObjectiveMoveRanker {
             val (resultingDestCell, defeatedTeamOption): (PossiblyUnknownCellState, Option[Team]) =
               (destCell, ownershipChange, defeatedOpponentOnCell) match {
                 case (EmptyCell(cellType, _), false, _) => EmptyCell(cellType, -resultingStrength) -> None
-                case (EmptyCell(cellType, _), true, _) => EmptyCell(cellType, -resultingStrength) -> None
+                case (EmptyCell(cellType, _), true, _) => OccupiedCellState(team, resultingStrength, cellType) -> None
                 case (OccupiedCellState(destTeam, _, GeneralCell), false, true) => EmptyCell(NormalCell, 0) ->
                   Some(destTeam)
                 case (OccupiedCellState(destTeam, _, cellType), false, true) => EmptyCell(cellType, 0) -> None
                 case (OccupiedCellState(destTeam, _, cellType), false, false) =>
                   OccupiedCellState(destTeam, -resultingStrength, cellType) -> None
-                case (OccupiedCellState(destTeam, _, GeneralCell), true, _) =>
+                case (OccupiedCellState(destTeam, _, GeneralCell), true, _) if destTeam != team =>
                   OccupiedCellState(team, resultingStrength, NormalCell) -> Some(destTeam)
                 case (OccupiedCellState(destTeam, _, cellType), true, _) =>
                   OccupiedCellState(team, resultingStrength, cellType) -> None
@@ -142,9 +141,10 @@ object MultiObjectiveMoveRanker {
     }
   }
 
-  private def scoreStateForLand(state: PlayerVisibleState): Double = state.board.toList.map {
+  private def scoreStateForLand(state: PlayerVisibleState): Double = state.board.toSeq.map {
     case (_, OccupiedCellState(team, soldiers, CityCell)) if team == state.playingAsTeam => 250.0 + soldiers
     case (_, OccupiedCellState(team, soldiers, _)) if team == state.playingAsTeam => 10.0 + soldiers
+    case _ => 0
   }.sum
 
   private def scoreStateForDefence(state: PlayerVisibleState, distances: DistanceMap): Double = {
@@ -159,7 +159,7 @@ object MultiObjectiveMoveRanker {
         case OccupiedCellState(_, strength, _) => strength
         case _ => 0
       }
-      val totalTroops = state.board.toList.map {
+      val totalTroops = state.board.toSeq.map {
         case (_, OccupiedCellState(team, strength, _)) if team == state.playingAsTeam => strength
         case _ => 0
       }.sum
@@ -167,17 +167,15 @@ object MultiObjectiveMoveRanker {
 
       val generalUnderoccupationPenalty = -Math.max(0.0, protectionDeficit) * 1E7
 
-      val byDistanceFromGeneral : Map[Int, List[(Int, Coordinate)]] = distances.toList.collect {
-        case ((from, to), Some(dist)) if from == myGeneralPos => dist -> to
-      }.groupBy(_._1)
+      val byDistanceFromGeneral : Map[Option[Int], Seq[(Coordinate, Option[Int])]] = distances(myGeneralPos).toSeq.groupBy(_._2)
 
       case class ProtectionRing(distance: Int, myTotal: Int, enemyTotal: Int)
 
       val protectionPerimeter = 30
-      val protectionRings = (1 to protectionPerimeter).toList.foldLeft(List(ProtectionRing(0, generalProtection, 0))) {
+      val protectionRings = (1 to protectionPerimeter).toSeq.foldLeft(List(ProtectionRing(0, generalProtection, 0))) {
         case (Nil, _) => Nil
         case (l @ProtectionRing(_, myInnerRing, enemyInnerRing) :: _, atDistanceRing) =>
-          val coords = byDistanceFromGeneral.getOrElse(atDistanceRing, List()).map(_._2)
+          val coords = byDistanceFromGeneral.getOrElse(Some(atDistanceRing), List()).map(_._1)
           val myArmyInRing = coords.map(state.board.get).map {
             case Some(OccupiedCellState(team, soldiers, _)) if team == state.playingAsTeam => soldiers
             case _ => 0
@@ -196,7 +194,10 @@ object MultiObjectiveMoveRanker {
         case ProtectionRing(distance, myTotal, enemyTotal) =>
           val diff = myTotal - enemyTotal
           val underprotectionPenalty = if (diff <= 0) 1E5 else if (distance >= safeRing) 1E3 else 0
-          diff * underprotectionPenalty / distance
+          if (distance == 0)
+            0
+          else
+            diff * underprotectionPenalty / distance
       }.sum
 
       generalUnderoccupationPenalty + protectionRingPenalty
@@ -209,14 +210,14 @@ object MultiObjectiveMoveRanker {
     case AttackEnemyGeneral(pos) => decayingStrengthAround(pos, state, distances)
   }
 
-  private def heuristicallyScoreState(state: PlayerVisibleState, strategies: List[(Double, ProposedStrategy)],
+  private def heuristicallyScoreState(state: PlayerVisibleState, strategies: Seq[(Double, ProposedStrategy)],
                                       distances: DistanceMap) =
     scoreStateForLand(state) + scoreStateForDefence(state, distances) + strategies.map {
       case (priority, strategy) => priority * scoreStateForStrategy(state, strategy, distances)
     }.sum
 
   private def findNextTeam(lastTeam: Team, state: PlayerVisibleState): Team = {
-    val stillIn = state.scores.filter { case (_, score) => score.land > 0 }.toList.map(_._1)
+    val stillIn = state.scores.filter { case (_, score) => score.land > 0 }.toSeq.map(_._1)
     stillIn.find(t => t.teamId > lastTeam.teamId) match {
       case None => stillIn.head
       case Some(team) => team
@@ -224,7 +225,7 @@ object MultiObjectiveMoveRanker {
   }
 
   private def recursivelyScoreMinimax(state: PlayerVisibleState, lastTeam: Team, maximiseTeam: Team,
-                                      strategies : List[(Double, ProposedStrategy)],
+                                      strategies : Seq[(Double, ProposedStrategy)],
                                       distances: DistanceMap, depthLeft: Int): Double =
     if (state.scores(maximiseTeam).land == 0)
       -1E20 // Defeat
@@ -247,18 +248,22 @@ object MultiObjectiveMoveRanker {
 
 
   private def scoreAction(action: ProposedAction, state: PlayerVisibleState,
-                          strategies: List[(Double, ProposedStrategy)],
+                          strategies: Seq[(Double, ProposedStrategy)],
                           distances: DistanceMap): Double = {
     val newState = predictImpactOf(action, state, state.playingAsTeam)
+    val inactionPenalty = if (action == DoNothingAction) -1 else 0
     recursivelyScoreMinimax(state = newState, lastTeam = newState.playingAsTeam, maximiseTeam = newState.playingAsTeam,
-      distances = distances, strategies = strategies, depthLeft = 5)
+      distances = distances, strategies = strategies, depthLeft = 0) + inactionPenalty
   }
 
   def pickBestMove(state: PlayerVisibleState): ProposedAction = {
     val distances = FloydDistanceCalculator.distanceMapForPlayerState(state)
     val strategies = pickStrategies(state, distances)
 
-    allPossibleMoves(state, state.playingAsTeam).sortBy(action =>
-      scoreAction(action, state, strategies, distances)).head
+    val scoredMoves = allPossibleMoves(state, state.playingAsTeam).map(action =>
+      action -> scoreAction(action, state, strategies, distances)
+    )
+
+    scoredMoves.sortBy(-_._2).head._1
   }
 }

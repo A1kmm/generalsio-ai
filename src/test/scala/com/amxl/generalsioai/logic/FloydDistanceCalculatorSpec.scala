@@ -15,16 +15,16 @@ class FloydDistanceCalculatorSpec extends Specification {
       playingAsTeam = Team(0), turn = 0, turnsUntilLandBonus = 50
     ))
 
-    dists(Coordinate(0, 0) -> Coordinate(0, 0)) should be_==(Some(0))
-    dists(Coordinate(0, 0) -> Coordinate(1, 0)) should be_==(Some(1))
-    dists(Coordinate(0, 0) -> Coordinate(2, 0)) should be_==(Some(2))
+    dists(Coordinate(0, 0))(Coordinate(0, 0)) should be_==(Some(0))
+    dists(Coordinate(0, 0))(Coordinate(1, 0)) should be_==(Some(1))
+    dists(Coordinate(0, 0))(Coordinate(2, 0)) should be_==(Some(2))
 
-    dists(Coordinate(0, 0) -> Coordinate(0, 1)) should be_==(None)
-    dists(Coordinate(0, 0) -> Coordinate(1, 1)) should be_==(Some(2))
-    dists(Coordinate(0, 0) -> Coordinate(2, 1)) should be_==(None)
+    dists(Coordinate(0, 0))(Coordinate(0, 1)) should be_==(None)
+    dists(Coordinate(0, 0))(Coordinate(1, 1)) should be_==(Some(2))
+    dists(Coordinate(0, 0))(Coordinate(2, 1)) should be_==(None)
 
-    dists(Coordinate(0, 0) -> Coordinate(0, 2)) should be_==(Some(4))
-    dists(Coordinate(0, 0) -> Coordinate(1, 2)) should be_==(Some(3))
-    dists(Coordinate(0, 0) -> Coordinate(2, 2)) should be_==(Some(4))
+    dists(Coordinate(0, 0))(Coordinate(0, 2)) should be_==(Some(4))
+    dists(Coordinate(0, 0))(Coordinate(1, 2)) should be_==(Some(3))
+    dists(Coordinate(0, 0))(Coordinate(2, 2)) should be_==(Some(4))
   }
 }
