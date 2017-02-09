@@ -10,14 +10,14 @@ import scala.language.higherKinds
 
 object CannedInterpreter {
   type CannedResponse[T[_]] = FunctionK[T, Identity]
-  case class CannedInterpreter[T[_]](cannedResponses: List[CannedResponse[T]]) {
+  case class CannedInterpreter[T[_]](name: String, cannedResponses: List[CannedResponse[T]]) {
     private def tryPop(): State[List[CannedResponse[T]], CannedResponse[T]] = for {
       l <- State.get[List[CannedResponse[T]]]
       r <- l match {
         case (r::rest) => for {
           _ <- State.set(rest)
         } yield r
-        case Nil => throw new RuntimeException("More effects executed than responses available")
+        case Nil => throw new RuntimeException(name + "interpreter: More effects executed than responses available")
       }
     } yield r
 
@@ -31,8 +31,8 @@ object CannedInterpreter {
       Interpret.transform(eff, transformAll).evalState(cannedResponses)
   }
 
-  def cannedInterpreter[T[_]](responses: List[CannedResponse[T]]): CannedInterpreter[T] =
-    CannedInterpreter(responses)
+  def cannedInterpreter[T[_]](name: String, responses: List[CannedResponse[T]]): CannedInterpreter[T] =
+    CannedInterpreter(name, responses)
 
   def respondWith[T[_], X](f : PartialFunction[T[X], X]): CannedResponse[T] = new FunctionK[T, Identity] {
     override def apply[A](fa: T[A]): Identity[A] = f(fa.asInstanceOf[T[X]]).asInstanceOf[A]

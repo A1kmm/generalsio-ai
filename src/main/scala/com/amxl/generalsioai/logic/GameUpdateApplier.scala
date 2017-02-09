@@ -70,4 +70,16 @@ object GameUpdateApplier {
     }
   }
 
+  def rememberDespiteFog(oldState: PlayerVisibleState, currentState: PlayerVisibleState): PlayerVisibleState = {
+    currentState.copy(board = currentState.board.map {
+      case (coord, UnknownCell) =>
+        oldState.board(coord) match {
+          case t : EmptyCell => coord -> t
+          case OccupiedCellState(team, soldiers, cellType) => coord -> OccupiedCellState(Team(-1), soldiers, cellType)
+          case _ => coord -> UnknownCell
+        }
+      case (coord, state) => coord -> state
+    })
+  }
+
 }

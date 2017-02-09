@@ -1,9 +1,12 @@
 package com.amxl.generalsioai.logic
 
+import java.time.Duration
+
 import org.atnos.eff.MemberIn
 import org.atnos.eff._
 import com.amxl.generalsioai.models.ClientActions._
 import com.amxl.generalsioai.models.LogActions._
+import com.amxl.generalsioai.models.ClockActions._
 import com.amxl.generalsioai.models.OfficialMessages._
 import com.amxl.generalsioai.models.{DoNothingAction, ProposedAction, ProposedAttackAction}
 import com.amxl.generalsioai.models.State.{Coordinate, OfficialStateArrays, PlayerVisibleState}
@@ -14,9 +17,11 @@ import cats.data.State
 object GameBot {
   type HasClientAction[R] = MemberIn[ClientAction, R]
   type HasLog[R] = MemberIn[LogAction, R]
+  type HasClock[R] = MemberIn[ClockAction, R]
 
-  val userId = "B1XnKMISe"
-  val username = "DefeatinatorBotv1"
+  case class Ai(f: PlayerVisibleState => (ProposedAction, Ai))
+
+  val username = "Bot65443"
 
   private def waitForGameStart[R : HasClientAction : HasLog](): Eff[R, OfficialStateArrays] =
     readMessage().flatMap {
@@ -42,9 +47,32 @@ object GameBot {
     }
   }
 
-  private def gameMainLoop[R : HasClientAction : HasLog : MemberIn[State[OfficialStateArrays, ?], ?]](
-    ai: PlayerVisibleState => ProposedAction): Eff[R, Unit] = {
-    readMessage().flatMap {
+  private def correctForFogMemory[R : MemberIn[State[Option[PlayerVisibleState], ?], ?]](st: PlayerVisibleState):
+    Eff[R, PlayerVisibleState] = for {
+    oldState <- get[R, Option[PlayerVisibleState]]
+  } yield oldState match {
+    case None => st
+    case Some(oldStateValue) => GameUpdateApplier.rememberDespiteFog(oldStateValue, st)
+  }
+
+  private def invokeAndUpdateAi[R : MemberIn[State[Ai, ?], ?]](st: PlayerVisibleState): Eff[R, ProposedAction] = for {
+    currentAi <- get[R, Ai]
+    (action, nextAi) = currentAi.f(st)
+    _ <- put[R, Ai](nextAi)
+  } yield action
+
+
+  private def gameMainLoop[R
+      : HasClientAction
+      : HasLog
+      : HasClock
+      : MemberIn[State[OfficialStateArrays, ?], ?]
+      : MemberIn[State[Option[PlayerVisibleState], ?], ?]
+      : MemberIn[State[Ai, ?], ?]]: Eff[R, Unit] = for {
+    preReadTime <- currentTime[R]()
+    msg <- readMessage[R]()
+    postReadTime <- currentTime[R]()
+    _ <- msg match {
       case GameLost => writeLog("We lost :'(")
       case GameWon => writeLog("We won!!!!!")
       case update: GameUpdate =>
@@ -52,34 +80,44 @@ object GameBot {
           oldState <- get[R, OfficialStateArrays]
           newState = GameUpdateApplier.updateOfficialState(update, oldState)
           _ <- put[R, OfficialStateArrays](newState)
-          _ <- GameUpdateApplier.officialStateToPlayerVisibleState(newState, update) match {
-            case Right(playerVisibleState) =>
-              val proposedAction = ai(playerVisibleState)
+          playerVisible <- GameUpdateApplier.officialStateToPlayerVisibleState(newState, update) match {
+            case Right(v) => correctForFogMemory(v).map(Right(_))
+            case x => Eff.pure[R, Either[String, PlayerVisibleState]](x)
+          }
+          _ <- playerVisible match {
+            case Left(errMsg) => writeLog[R](errMsg)
+            case Right(playerVisibleState) if Duration.between(preReadTime, postReadTime).toMillis >= 250 =>
               for {
-                _ <- doProposedAction(proposedAction, playerVisibleState)
-                _ <- gameMainLoop[R](ai)
+                proposedAction <- invokeAndUpdateAi(playerVisibleState)
+                _ <- doProposedAction[R](proposedAction, playerVisibleState)
+                _ <- gameMainLoop[R]
               } yield ()
-            case Left(msg) => writeLog(msg)
+            case _ => gameMainLoop[R]
           }
         } yield ()
 
-      case msg => for {
+      case _ => for {
         _ <- writeLog("Other message received during game: " + msg)
-        _ <- gameMainLoop(ai)
+        _ <- gameMainLoop
       } yield ()
     }
-  }
+  } yield ()
 
+  private type ExtraStack = Fx3[State[Option[PlayerVisibleState], ?], State[OfficialStateArrays, ?], State[Ai, ?]]
 
-  def runBotInClient[R : HasClientAction : HasLog](gameId: String, ai: PlayerVisibleState => ProposedAction):
+  def runBotInClient[R : HasClientAction : HasLog : HasClock](
+         userId: String, gameId: String, ai: Ai):
     Eff[R, Unit] = for {
-    _ <- writeMessage[R](StarsAndRank(userId))
-    _ <- writeMessage[R](JoinPrivate(gameId, userId))
     _ <- writeMessage[R](SetUsername(userId, username))
+    _ <- writeMessage[R](StarsAndRank(userId))
+    _ <- writeMessage[R](if (gameId == "1v1") Join1v1(userId) else JoinPrivate(gameId, userId))
     _ <- writeMessage[R](SetForceStart(gameId, isForced = true))
     stateArrays <- waitForGameStart()
 
-    _ <- gameMainLoop[Fx.prepend[State[OfficialStateArrays, ?], R]](ai).runState(stateArrays)
+    _ <- gameMainLoop[Fx.append[ExtraStack, R]]
+          .runState(ai)
+          .runState(stateArrays)
+          .runState(Option.empty[PlayerVisibleState])
 
     _ <- writeMessage[R](LeaveGame())
   } yield ()

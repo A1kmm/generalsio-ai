@@ -69,7 +69,8 @@ class OfficialMessageCodecSpec extends Specification {
         TestCase(input = SetForceStart(queueId = "queue", isForced = true), expectedResult = """["set_force_start","queue",true]"""),
         TestCase(input = Attack(source = 123, dest = 124, isHalf = false), expectedResult =
           """["attack",123,124,false]"""),
-        TestCase(input = LeaveGame(), expectedResult = """["leave_game"]""")
+        TestCase(input = LeaveGame(), expectedResult = """["leave_game"]"""),
+        TestCase(input = Join1v1("blah"), expectedResult = """["join_1v1","blah"]""")
       )
 
       cases map { testCase =>

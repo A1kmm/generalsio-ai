@@ -6,6 +6,7 @@ object OfficialMessages {
 
   case class StarsAndRank(userId: String) extends MessageToServer
   case class JoinPrivate(gameId: String, userId: String) extends MessageToServer
+  case class Join1v1(userId: String) extends MessageToServer
   case class SetUsername(userId: String, name: String) extends MessageToServer
   case class SetForceStart(queueId: String, isForced: Boolean) extends MessageToServer
   case class Attack(source: Int, dest: Int, isHalf: Boolean) extends MessageToServer

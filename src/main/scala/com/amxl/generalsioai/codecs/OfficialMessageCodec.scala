@@ -65,10 +65,14 @@ object OfficialMessageCodec {
       Encoder.encodeString(userId),
       Encoder.encodeBoolean(isForced)
     )
-    case SetUsername(username, name) => Json.arr(
+    case SetUsername(userId, name) => Json.arr(
       Encoder.encodeString("set_username"),
-      Encoder.encodeString(username),
+      Encoder.encodeString(userId),
       Encoder.encodeString(name)
+    )
+    case Join1v1(userId) => Json.arr(
+      Encoder.encodeString("join_1v1"),
+      Encoder.encodeString(userId)
     )
     case LeaveGame() => Json.arr(Encoder.encodeString("leave_game"))
   }

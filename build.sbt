@@ -23,6 +23,6 @@ lazy val root = (project in file(".")).
     ),
 
     scalacOptions ++= Seq("-Xfatal-warnings", "-Xlint", "-Ywarn-unused-import", "-Ywarn-dead-code",
-                          "-Ywarn-dead-code", "-Ywarn-numeric-widen", "-Ypartial-unification"),
+                          "-Ywarn-dead-code", "-Ywarn-numeric-widen", "-Ypartial-unification", "-deprecation"),
     scalacOptions in Test ++= Seq("-Yrangepos")
   )

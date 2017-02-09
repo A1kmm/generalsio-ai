@@ -4,20 +4,51 @@ import com.amxl.generalsioai.models.{ProposedStrategy, _}
 import com.amxl.generalsioai.models.State._
 import FloydDistanceCalculator.DistanceMap
 
-object MultiObjectiveMoveRanker {
-  private val maximumNotProtectiveConcurrentStrategies = 2
+import scala.util.Random
 
-  private def allPossibleStrategies(state: PlayerVisibleState): Seq[ProposedStrategy] =
+object MultiObjectiveMoveRanker {
+  private val maximumNotProtectiveConcurrentStrategies = 1
+  private case class StrategicMemory(randomObsession: Option[Coordinate] = None,
+                                     lastStrategies: Seq[ProposedStrategy] = Seq())
+
+  private def allPossibleStrategies(state: PlayerVisibleState, strategy: StrategicMemory): Seq[ProposedStrategy] = {
+    strategy.randomObsession.map(c => Seq(TakeCellAt(c))).getOrElse(Seq.empty) ++
     state.board.toSeq.collect {
       case (p, OccupiedCellState(team, _, GeneralCell)) if team != state.playingAsTeam =>
-        AttackEnemyGeneral(p)
+        TakeCellAt(p)
       case (p, OccupiedCellState(team, _, CityCell)) if team != state.playingAsTeam =>
-        TakeCityAt(p)
-      case (p, EmptyCell(CityCell, _)) => TakeCityAt(p)
+        TakeCellAt(p)
+      case (p, EmptyCell(CityCell, _)) => TakeCellAt(p)
     }
+  }
+
+  private def updateObsession(state: PlayerVisibleState, memory: StrategicMemory): StrategicMemory = {
+    val coordIfUsable : Option[Coordinate] = memory.randomObsession.flatMap { coord =>
+      state.board(coord) match {
+        case OccupiedCellState(team, _, _) if team == state.playingAsTeam => None
+        case MountainCell => None
+        case _ => Some(coord)
+      }
+    }
+    val newObsession : Option[Coordinate] = coordIfUsable match {
+      case None =>
+        Random.shuffle(state.board.toSeq.filter { case (coord, cellState) =>
+          cellState match {
+            case UnknownCell => true
+            case OccupiedCellState(team, _, _) if team != state.playingAsTeam => true
+            case _ => false
+          }
+        }).headOption.map(_._1)
+      case x => x
+    }
+    memory.copy(randomObsession = newObsession)
+  }
+
+  private def allCoords(state: PlayerVisibleState): Seq[Coordinate] =
+    for (x <- 0 until state.size.x; y <- 0 until state.size.y) yield Coordinate(x, y)
 
   private def decayingStrengthAround(locus: Coordinate, state: PlayerVisibleState, distances: DistanceMap): Double = {
-    val decayRate = 0.9
+    val decayRate = 0.8
     def decayFunction(dist: Int) = Math.pow(decayRate, dist - 1.0)
     def strengthOfCell(coordinate: Coordinate): Double = state.board(coordinate) match {
       case OccupiedCellState(team, soldiers, _) =>
@@ -25,24 +56,37 @@ object MultiObjectiveMoveRanker {
       case _ => 0
     }
 
-    distances(locus).toSeq.groupBy(_._2).map {
+    val distanceFromLocus = distances(locus)
+    allCoords(state).map(v => distanceFromLocus(v) -> v).groupBy(_._1).map {
       case (None, _) => 0
-      case (Some(dist), cellsAtDist) => decayFunction(dist) * cellsAtDist.map(c => strengthOfCell(c._1)).sum
+      case (Some(dist), cellsAtDist) => decayFunction(dist) * cellsAtDist.map(c => strengthOfCell(c._2)).sum
     }.sum
   }
 
-  private def scoreStrategy(strategy: ProposedStrategy, state: PlayerVisibleState, distances: DistanceMap): Double =
-    strategy match {
-      case AttackEnemyGeneral(p) => 1000.0 * decayingStrengthAround(p, state, distances)
-      case TakeCityAt(p) => 10.0 * decayingStrengthAround(p, state, distances)
+  private def scoreStrategy(strategy: ProposedStrategy, state: PlayerVisibleState, distances: DistanceMap,
+                            lastStrategies: Seq[ProposedStrategy]): Double =
+    (if (lastStrategies.contains(strategy)) 1.2 else 1.0) *
+      Math.max(1, strategy match {
+          case TakeCellAt(p) =>
+            val strength = decayingStrengthAround(p, state, distances)
+            state.board(p) match {
+              case OccupiedCellState(_, _, GeneralCell) => 1000000.0 * strength
+              case OccupiedCellState(_, _, CityCell) => 100.0 * strength
+              case EmptyCell(CityCell, _) => 100.0 * strength
+              case _ => strength
+            }
+        })
+
+
+  private def pickStrategies(state: PlayerVisibleState, distances: DistanceMap, memory: StrategicMemory):
+  (StrategicMemory, Seq[(Double, ProposedStrategy)]) = {
+    val newMemory = updateObsession(state, memory)
+    val strategies = allPossibleStrategies(state, memory)
+         .map(strategy => (scoreStrategy(strategy, state, distances, memory.lastStrategies), strategy))
+         .sortBy(_._1)
+         .take(maximumNotProtectiveConcurrentStrategies)
+    (newMemory.copy(lastStrategies = strategies.map(_._2)), strategies)
   }
-
-
-  private def pickStrategies(state: PlayerVisibleState, distances: DistanceMap):
-    Seq[(Double, ProposedStrategy)] =
-      allPossibleStrategies(state).map(strategy => (scoreStrategy(strategy, state, distances), strategy))
-        .sortBy(_._1)
-        .take(maximumNotProtectiveConcurrentStrategies)
 
   private def neighbouringCells(coordinate: Coordinate): List[Coordinate] =
     List(
@@ -71,22 +115,6 @@ object MultiObjectiveMoveRanker {
       }
     }
   }
-
-  /* TODO Need to work out whether this actually helps and either remove or re-enable.
-  private def updateForLand(state: PlayerVisibleState): PlayerVisibleState = {
-    val (generalLandBonus, newTurnsForBonus) =
-      if (state.turnsUntilLandBonus == 0)
-        (1, 25)
-      else
-        (0, state.turnsUntilLandBonus - 1)
-      state.copy(turnsUntilLandBonus = newTurnsForBonus, board = state.board.map {
-        case (coord, s@OccupiedCellState(_, soldiers, GeneralCell)) => coord -> s.copy(soldiers = soldiers + 1)
-        case (coord, s@OccupiedCellState(_, soldiers, CityCell)) => coord -> s.copy(soldiers = soldiers + 1)
-        case (coord, s@OccupiedCellState(_, soldiers, _)) => coord -> s.copy(soldiers = soldiers + generalLandBonus)
-        case (coord, cellState) => coord -> cellState
-      })
-  }
-  */
 
   private def predictImpactOf(action: ProposedAction, state: PlayerVisibleState, team: Team): PlayerVisibleState = {
     action match {
@@ -148,8 +176,8 @@ object MultiObjectiveMoveRanker {
   }.sum
 
   private def scoreStateForDefence(state: PlayerVisibleState, distances: DistanceMap): Double = {
-    if (state.turn < 20)
-      0 // Don't start thinking about defence until turn 20, as early attack is unlikely, and expansion is needed.
+    if (state.turn < 250)
+      0 // Don't start thinking about defence until turn 250, as early attack is unlikely, and expansion is needed.
     else {
       val myGeneralPos = state.board.find {
         case (coord, OccupiedCellState(team, _, GeneralCell)) if team == state.playingAsTeam => true
@@ -163,16 +191,18 @@ object MultiObjectiveMoveRanker {
         case (_, OccupiedCellState(team, strength, _)) if team == state.playingAsTeam => strength
         case _ => 0
       }.sum
-      val protectionDeficit = 0.25 - (generalProtection + 0.0) / totalTroops
+      val protectionDeficit = 0.1 - (generalProtection + 0.0) / totalTroops
 
       val generalUnderoccupationPenalty = -Math.max(0.0, protectionDeficit) * 1E7
 
-      val byDistanceFromGeneral : Map[Option[Int], Seq[(Coordinate, Option[Int])]] = distances(myGeneralPos).toSeq.groupBy(_._2)
+      val distanceFromGeneral = distances(myGeneralPos)
+      val byDistanceFromGeneral : Map[Option[Int], Seq[(Coordinate, Option[Int])]] =
+        allCoords(state).map(v => v -> distanceFromGeneral(v)).groupBy(_._2)
 
       case class ProtectionRing(distance: Int, myTotal: Int, enemyTotal: Int)
 
-      val protectionPerimeter = 30
-      val protectionRings = (1 to protectionPerimeter).toSeq.foldLeft(List(ProtectionRing(0, generalProtection, 0))) {
+      val protectionPerimeter = 5
+      val protectionRings = (1 to protectionPerimeter).foldLeft(List(ProtectionRing(0, generalProtection, 0))) {
         case (Nil, _) => Nil
         case (l @ProtectionRing(_, myInnerRing, enemyInnerRing) :: _, atDistanceRing) =>
           val coords = byDistanceFromGeneral.getOrElse(Some(atDistanceRing), List()).map(_._1)
@@ -206,9 +236,15 @@ object MultiObjectiveMoveRanker {
 
   private def scoreStateForStrategy(state: PlayerVisibleState, strategy: ProposedStrategy, distances: DistanceMap):
     Double = strategy match {
-    case TakeCityAt(pos) => decayingStrengthAround(pos, state, distances)
-    case AttackEnemyGeneral(pos) => decayingStrengthAround(pos, state, distances)
-  }
+      case TakeCellAt(pos) =>
+        state.board(pos) match {
+          case OccupiedCellState(team, _, _) if team == state.playingAsTeam => 1E7
+          case _ => {
+            val s = decayingStrengthAround(pos, state, distances)
+            s
+          }
+        }
+    }
 
   private def heuristicallyScoreState(state: PlayerVisibleState, strategies: Seq[(Double, ProposedStrategy)],
                                       distances: DistanceMap) =
@@ -256,14 +292,22 @@ object MultiObjectiveMoveRanker {
       distances = distances, strategies = strategies, depthLeft = 0) + inactionPenalty
   }
 
-  def pickBestMove(state: PlayerVisibleState): ProposedAction = {
+  private def pickBestMove(memory: StrategicMemory, state: PlayerVisibleState): (StrategicMemory, ProposedAction) = {
     val distances = FloydDistanceCalculator.distanceMapForPlayerState(state)
-    val strategies = pickStrategies(state, distances)
+    val (newMemory, strategies) = pickStrategies(state, distances, memory)
+    println("Strategies: " + strategies)
 
     val scoredMoves = allPossibleMoves(state, state.playingAsTeam).map(action =>
       action -> scoreAction(action, state, strategies, distances)
     )
 
-    scoredMoves.sortBy(-_._2).head._1
+    (newMemory, scoredMoves.sortBy(-_._2).head._1)
   }
+
+  private def goAi(memory: StrategicMemory): GameBot.Ai = GameBot.Ai(state => {
+    val (newMemory, action) = pickBestMove(memory, state)
+    (action, goAi(newMemory))
+  })
+
+  val ai : GameBot.Ai = goAi(StrategicMemory())
 }
