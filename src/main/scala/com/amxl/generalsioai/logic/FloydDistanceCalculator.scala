@@ -7,7 +7,16 @@ import spire.syntax.cfor._
 object FloydDistanceCalculator {
   type DistanceMap = Coordinate => Coordinate => Option[Int]
 
-  def distanceMapForPlayerState(state: PlayerVisibleState): DistanceMap = {
+  def distanceMapForPlayerState(state: PlayerVisibleState): DistanceMap =
+    generalisedDistanceMapForPlayerState(state, (_) => 1)
+  def attackCostDistanceMapForPlayerState(state: PlayerVisibleState): DistanceMap =
+    generalisedDistanceMapForPlayerState(state, (coord) => state.board(coord) match {
+      case EmptyCell(CityCell, strength) => strength
+      case OccupiedCellState(team, soldiers, _) if team != state.playingAsTeam => soldiers
+      case _ => 1
+    })
+
+  def generalisedDistanceMapForPlayerState(state: PlayerVisibleState, entryCost: (Coordinate) => Int): DistanceMap = {
     val coordinateCount = state.size.y * state.size.x
 
     def idxToCoord(idx: Int): Coordinate = Coordinate(x = idx % state.size.x, y = idx / state.size.x)
@@ -22,6 +31,7 @@ object FloydDistanceCalculator {
     }
     cfor(0)(_ < coordinateCount, _ + 1) { i =>
       val coord = idxToCoord(i)
+      val cost = entryCost(coord)
       state.board(coord) match {
         case MountainCell =>
         case _ =>
@@ -31,7 +41,7 @@ object FloydDistanceCalculator {
             foreach((j: Coordinate) =>
               state.board(j) match {
                 case MountainCell =>
-                case _ => floydTemporaryArray(coordToIdx(j) * coordinateCount + i) = 1
+                case _ => floydTemporaryArray(coordToIdx(j) * coordinateCount + i) = cost
               }
             )
       }

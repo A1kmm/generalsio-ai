@@ -27,8 +27,7 @@ object Main {
       val actorSystem: ActorSystem = ActorSystem()
       val actorMaterializer: Materializer = ActorMaterializer()(actorSystem)
 
-      var done : Boolean = false
-      while (!done) {
+      while (true) {
         try {
           val asyncEff: Eff[Fx.fx1[Async], Unit] =
             runLogs(runClock(runReader(actorMaterializer)(
@@ -38,13 +37,10 @@ object Main {
 
           Await.result(AsyncFutureInterpreter.create(actorSystem.dispatcher: ExecutionContext).runAsync(asyncEff),
             Duration.Inf)
-          done = true;
         } catch {
           case FailedWithMessageException(msg) => println("Restarting after failure: " + msg)
         }
       }
-
-      actorSystem.terminate()
     }
   }
 }

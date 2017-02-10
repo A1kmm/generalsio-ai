@@ -48,7 +48,7 @@ object MultiObjectiveMoveRanker {
     for (x <- 0 until state.size.x; y <- 0 until state.size.y) yield Coordinate(x, y)
 
   private def decayingStrengthAround(locus: Coordinate, state: PlayerVisibleState, distances: DistanceMap): Double = {
-    val decayRate = 0.8
+    val decayRate = 0.6
     def decayFunction(dist: Int) = Math.pow(decayRate, dist - 1.0)
     def strengthOfCell(coordinate: Coordinate): Double = state.board(coordinate) match {
       case OccupiedCellState(team, soldiers, _) =>
@@ -176,8 +176,8 @@ object MultiObjectiveMoveRanker {
   }.sum
 
   private def scoreStateForDefence(state: PlayerVisibleState, distances: DistanceMap): Double = {
-    if (state.turn < 250)
-      0 // Don't start thinking about defence until turn 250, as early attack is unlikely, and expansion is needed.
+    if (state.turn < 100)
+      0 // Don't start thinking about defence until turn 100, as early attack is unlikely, and expansion is needed.
     else {
       val myGeneralPos = state.board.find {
         case (coord, OccupiedCellState(team, _, GeneralCell)) if team == state.playingAsTeam => true
@@ -234,22 +234,40 @@ object MultiObjectiveMoveRanker {
     }
   }
 
-  private def scoreStateForStrategy(state: PlayerVisibleState, strategy: ProposedStrategy, distances: DistanceMap):
+  private def findCostForWeight(targetWeight: Double, costsAndWeights: Seq[(Double, Double)]): Double = {
+    val result = costsAndWeights.foldLeft((targetWeight, 0.0, 0)) { (state, costWeight) =>
+      (state, costWeight) match {
+        case ((weightLeft, costSoFar, countSoFar), (nextCost, nextWeight)) =>
+          if (weightLeft <= 0)
+            state
+          else
+            (weightLeft - Math.max(1.0, nextWeight), costSoFar + nextCost, countSoFar + 1)
+      }
+    }
+    result._2 / result._3
+  }
+
+  private def scoreStateForStrategy(state: PlayerVisibleState, strategy: ProposedStrategy, distances: DistanceMap,
+                                    attackCostDistances: DistanceMap):
     Double = strategy match {
       case TakeCellAt(pos) =>
+        val costAndWeight = state.board.toSeq.collect {
+          case (coord, OccupiedCellState(team, soldiers, _)) if team == state.playingAsTeam =>
+            distances(coord)(pos).map(_ + 0.0).getOrElse(1E6) ->
+              (soldiers - attackCostDistances(coord)(pos).map(_ + 0.0).getOrElse(1E6))
+        }.sortBy(-_._2)
         state.board(pos) match {
           case OccupiedCellState(team, _, _) if team == state.playingAsTeam => 1E7
-          case _ => {
-            val s = decayingStrengthAround(pos, state, distances)
-            s
-          }
+          case OccupiedCellState(_, soldiers, _) => 1E3-findCostForWeight(1.5 * soldiers + 1.0, costAndWeight)
+          case EmptyCell(_, soldiers) => 1E3-findCostForWeight(1.5 * soldiers + 1.0, costAndWeight)
+          case _ => 1E3-findCostForWeight(10.0, costAndWeight)
         }
     }
 
   private def heuristicallyScoreState(state: PlayerVisibleState, strategies: Seq[(Double, ProposedStrategy)],
-                                      distances: DistanceMap) =
+                                      distances: DistanceMap, attackCostDistances: DistanceMap) =
     scoreStateForLand(state) + scoreStateForDefence(state, distances) + strategies.map {
-      case (priority, strategy) => priority * scoreStateForStrategy(state, strategy, distances)
+      case (priority, strategy) => priority * scoreStateForStrategy(state, strategy, distances, attackCostDistances)
     }.sum
 
   private def findNextTeam(lastTeam: Team, state: PlayerVisibleState): Team = {
@@ -262,19 +280,20 @@ object MultiObjectiveMoveRanker {
 
   private def recursivelyScoreMinimax(state: PlayerVisibleState, lastTeam: Team, maximiseTeam: Team,
                                       strategies : Seq[(Double, ProposedStrategy)],
-                                      distances: DistanceMap, depthLeft: Int): Double =
+                                      distances: DistanceMap, attackCostDistances: DistanceMap,
+                                      depthLeft: Int): Double =
     if (state.scores(maximiseTeam).land == 0)
       -1E20 // Defeat
     else if (state.scores.count { case (_, score) => score.land > 0 } == 1)
       1E20 // Victory
     else if (depthLeft == 0)
-      heuristicallyScoreState(state, strategies, distances)
+      heuristicallyScoreState(state, strategies, distances, attackCostDistances)
     else {
       val nextTeam = findNextTeam(lastTeam, state)
       def evaluateMove(move: ProposedAction): Double =
         recursivelyScoreMinimax(state = predictImpactOf(move, state, nextTeam),
           lastTeam = nextTeam, maximiseTeam = maximiseTeam, strategies = strategies,
-          distances = distances, depthLeft = depthLeft - 1)
+          distances = distances, attackCostDistances = attackCostDistances, depthLeft = depthLeft - 1)
       val moveScores = allPossibleMoves(state, nextTeam).map(evaluateMove)
       if (nextTeam == maximiseTeam)
         moveScores.max
@@ -285,23 +304,25 @@ object MultiObjectiveMoveRanker {
 
   private def scoreAction(action: ProposedAction, state: PlayerVisibleState,
                           strategies: Seq[(Double, ProposedStrategy)],
-                          distances: DistanceMap): Double = {
+                          distances: DistanceMap, attackCostDistances: DistanceMap): Double = {
     val newState = predictImpactOf(action, state, state.playingAsTeam)
     val inactionPenalty = if (action == DoNothingAction) -1 else 0
     recursivelyScoreMinimax(state = newState, lastTeam = newState.playingAsTeam, maximiseTeam = newState.playingAsTeam,
-      distances = distances, strategies = strategies, depthLeft = 0) + inactionPenalty
+      distances = distances, attackCostDistances = attackCostDistances, strategies = strategies,
+      depthLeft = 0) + inactionPenalty
   }
 
   private def pickBestMove(memory: StrategicMemory, state: PlayerVisibleState): (StrategicMemory, ProposedAction) = {
     val distances = FloydDistanceCalculator.distanceMapForPlayerState(state)
+    val attackCostDistances = FloydDistanceCalculator.attackCostDistanceMapForPlayerState(state)
     val (newMemory, strategies) = pickStrategies(state, distances, memory)
     println("Strategies: " + strategies)
 
-    val scoredMoves = allPossibleMoves(state, state.playingAsTeam).map(action =>
-      action -> scoreAction(action, state, strategies, distances)
+    val scoredMoves = allPossibleMoves(state, state.playingAsTeam).par.map(action =>
+      action -> scoreAction(action, state, strategies, distances, attackCostDistances)
     )
 
-    (newMemory, scoredMoves.sortBy(-_._2).head._1)
+    (newMemory, scoredMoves.seq.sortBy(-_._2).head._1)
   }
 
   private def goAi(memory: StrategicMemory): GameBot.Ai = GameBot.Ai(state => {
