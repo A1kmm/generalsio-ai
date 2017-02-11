@@ -11,8 +11,8 @@ object FloydDistanceCalculator {
     generalisedDistanceMapForPlayerState(state, (_) => 1)
   def attackCostDistanceMapForPlayerState(state: PlayerVisibleState): DistanceMap =
     generalisedDistanceMapForPlayerState(state, (coord) => state.board(coord) match {
-      case EmptyCell(CityCell, strength) => strength
-      case OccupiedCellState(team, soldiers, _) if team != state.playingAsTeam => soldiers
+      case EmptyCell(CityCell, strength) => Math.max(strength, 1)
+      case OccupiedCellState(team, soldiers, _) if team != state.playingAsTeam => Math.max(1, soldiers)
       case _ => 1
     })
 

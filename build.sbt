@@ -18,6 +18,7 @@ lazy val root = (project in file(".")).
       "com.typesafe.akka" %% "akka-http-core" % akkaVersion,
       "org.atnos" %% "eff" % "2.2.0",
       "org.spire-math" %% "spire" % "0.13.0",
+      "org.uncommons.watchmaker" % "watchmaker-framework" % "0.7.1",
 
       "org.specs2" %% "specs2-core" % "3.8.6" % "test"
     ),

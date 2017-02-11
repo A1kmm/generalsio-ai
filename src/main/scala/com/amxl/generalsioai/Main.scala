@@ -5,7 +5,7 @@ import com.amxl.generalsioai.interpreter.LogInterpreter._
 import com.amxl.generalsioai.interpreter.ClockInterpreter._
 import com.amxl.generalsioai.wsclient.GeneralsClient._
 import com.amxl.generalsioai.logic.GameBot._
-import com.amxl.generalsioai.logic.MultiObjectiveMoveRanker._
+import com.amxl.generalsioai.logic.PhaseBasedMoveRanker._
 import com.amxl.generalsioai.models.ClientActions.ClientAction
 import com.amxl.generalsioai.models.ClockActions.ClockAction
 import com.amxl.generalsioai.models.LogActions.LogAction
