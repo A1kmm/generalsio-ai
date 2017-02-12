@@ -86,7 +86,7 @@ object GameBot {
           }
           _ <- playerVisible match {
             case Left(errMsg) => writeLog[R](errMsg)
-            case Right(playerVisibleState) if Duration.between(preReadTime, postReadTime).toMillis >= 250 =>
+            case Right(playerVisibleState) if Duration.between(preReadTime, postReadTime).toMillis >= 50 =>
               for {
                 proposedAction <- invokeAndUpdateAi(playerVisibleState)
                 _ <- doProposedAction[R](proposedAction, playerVisibleState)

@@ -10,7 +10,7 @@ object MoveFinder {
       Coordinate(coordinate.x, coordinate.y - 1), Coordinate(coordinate.x, coordinate.y + 1)
     )
 
-  private def canOccupy(state: PlayerVisibleState, coordinate: Coordinate) =
+  def canOccupy(state: PlayerVisibleState, coordinate: Coordinate): Boolean =
     state.board.get(coordinate) match {
       case None => false
       case Some(MountainCell) => false
@@ -19,17 +19,20 @@ object MoveFinder {
     }
 
   def allPossibleMoves(state: PlayerVisibleState, playingTeam: Team): Seq[ProposedAction] = {
-    val sourceCells = state.board.toSeq.collect {
+    val sourceCells = state.board.view.collect {
       case (coord, State.OccupiedCellState(team, soldiers, cellType)) if team == playingTeam && soldiers > 1 =>
         coord -> (soldiers > 2)
     }
 
-    Seq(DoNothingAction) ++ sourceCells.flatMap { case (sourceCell, isHalfStrengthOption) =>
+    DoNothingAction +: sourceCells.flatMap { case (sourceCell, isHalfStrengthOption) =>
       neighbouringCells(sourceCell).filter(canOccupy(state, _)).flatMap { target =>
-        ProposedAttackAction(sourceCell, target, halfStrength = false) ::
-          (if (isHalfStrengthOption) List(ProposedAttackAction(sourceCell, target, halfStrength = true)) else List.empty)
+        if (isHalfStrengthOption)
+          Seq(ProposedAttackAction(sourceCell, target, halfStrength = false),
+              ProposedAttackAction(sourceCell, target, halfStrength = true))
+        else
+          Seq(ProposedAttackAction(sourceCell, target, halfStrength = false))
       }
-    }
+    }.toSeq
   }
 
   def allCoords(state: PlayerVisibleState): Seq[Coordinate] =
